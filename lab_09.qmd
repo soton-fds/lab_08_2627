@@ -1,0 +1,146 @@
+---
+title: Lab 9
+format:
+    html:
+        css: styles.css
+---
+
+## Objectives {.unnumbered}
+
+This lab accompanies the Week 9 notes, [*Research Software Engineering and Architecture in R*](https://soton-fds.github.io/week09.html).
+
+- Apply a function to every element of a vector or list with `map` and its typed variants, and to several vectors in parallel with `pmap`.
+- Use `walk` for functions that are called for their side effects.
+- Replace a loop with `split()`, `map()` and `list_rbind()`, and check that a refactor does not change the results.
+- Read many files at once, and use `possibly()` so that one failure does not stop the others.
+- Write functions that check their inputs, and stop with a clear error message.
+
+When you have finished the lab, there are more questions in `lab_09_practice.qmd`, including `map2`, `reduce`, pure functions, unit tests and Simpson's paradox.
+
+### Task 1: From Loops to Maps
+
+The file `data/penguins.csv` contains the penguins data from the Week 9 notes: body measurements of 344 penguins of three species, recorded on three islands in Antarctica between 2007 and 2009.
+
+```{r}
+#| message: false
+library(tidyverse)
+penguins <- read_csv("data/penguins.csv")
+```
+
+We start with two short warm-ups.
+
+```{r}
+set.seed(123)
+list_of_vectors <- list(
+    rnorm(20),
+    rnorm(20, mean = 1),
+    rnorm(20, mean = -1, sd = 2)
+)
+numbers <- 1:10
+summary_stats <- list(mean, median, sd, var)
+```
+
+- [ ] Calculate the mean of each vector in `list_of_vectors`.
+- [ ] For each statistic in `summary_stats`, apply the statistic to `numbers`.
+
+::: {.solution}
+
+:::
+
+Next we use `pmap` to draw several plots of the penguins at once.
+
+```{r}
+variables <- c("flipper_length_mm", "bill_length_mm", "bill_depth_mm")
+```
+
+- [ ] For each `<variable>` in `variables`, produce a plot of that variable against `body_mass_g` in `penguins`. (*Hint*: each `<variable>` is a string, not a column; recall `.data[[...]]` from Lab 8.)
+- [ ] Create a vector of display names for the $y$-axes and add them to your plot.
+- [ ] Create a vector of titles and add them to your plot.
+
+::: {.solution}
+
+:::
+
+Finally, we replace a loop with `map`.
+The code below uses a `for` loop to fit a separate straight line of bill depth against bill length for each species of penguin, and collects the slopes and intercepts into a tibble.
+(`lm()` fits the line, and `coef()` extracts its intercept and slope.)
+
+- [ ] Rewrite the code using `purrr` instead of a loop. (*Hint*: see *Working with Lists of Results* in the [Week 9 notes](https://soton-fds.github.io/week09.html), and look up `split()` and `list_rbind()`.)
+
+```{r}
+species <- unique(penguins$species)
+results <- list()
+
+for (sp in species) {
+    data <- penguins |> filter(species == sp)
+
+    # fit a linear regression model of bill depth vs. bill length
+    model <- lm(bill_depth_mm ~ bill_length_mm, data = data)
+
+    # Extract the slope and intercept
+    slope <- coef(model)["bill_length_mm"]
+    intercept <- coef(model)["(Intercept)"]
+
+    # Store the results
+    results[[sp]] <- tibble(
+        species = sp,
+        slope = slope,
+        intercept = intercept
+    )
+}
+
+# put into a data frame
+loop_results <- bind_rows(results)
+loop_results
+```
+
+::: {.solution}
+
+:::
+
+- [ ] A refactor should change how the code is organised, without changing what it does. Check that your version gives the same results as the loop. If it doesn't, why not?
+
+::: {.solution}
+
+:::
+
+### Task 2: Many Files, and Failing Well
+
+Research data often arrive as many files with the same format, such as one file per site or per field season.
+The folder `data/penguins` contains the penguins data as one CSV file per species per year.
+
+- [ ] Read all of the CSV files in `data/penguins` into a single tibble, with a column recording which file each row came from. Look at what is in the folder first. (*Hint*: see *Working with Lists of Results* in the [Week 9 notes](https://soton-fds.github.io/week09.html); `set_names()` will help you keep track of which file is which.)
+
+::: {.solution}
+
+:::
+
+- [ ] Use `fit_bill_model()` from Task 1 to fit a separate line of bill depth against bill length for each file. Your code should fail. Which file causes the problem, and why?
+
+::: {.solution}
+
+:::
+
+- [ ] Change your code so that a file that cannot be fitted no longer stops the others. Check which files failed, and combine the results for the others into a single tibble.
+
+::: {.solution}
+
+:::
+
+- [ ] Is it reasonable simply to leave out the file that failed? What would you report alongside these results?
+
+::: {.solution}
+
+:::
+
+The error from `lm()` above, `0 (non-NA) cases`, comes from deep inside `lm()`, and doesn't say much about what is actually wrong with the data.
+
+- [ ] Change `fit_bill_model()` so that it checks its input first, and stops with a clear error message if there are fewer than two penguins with both bill measurements. Why two?
+
+::: {.solution}
+
+:::
+
+## Finished? {.unnumbered}
+
+Carry on with the questions in `lab_09_practice.qmd`.

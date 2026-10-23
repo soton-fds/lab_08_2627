@@ -1,0 +1,213 @@
+---
+title: Lab 9 Practice Questions
+format:
+    html:
+        css: styles.css
+---
+
+## About these questions {.unnumbered}
+
+These questions are for extra practice after Lab 9, using the same data.
+Tasks 1–4 follow on from Task 1 of the lab (from loops to maps), and Tasks 5–8 from Task 2 of the lab (many files, and failing well).
+Questions marked **Extension** are more challenging.
+
+The cell below loads the penguins data, and recreates the objects from the lab that these questions use: `numbers`, the combined data from the files in `data/penguins` split into one tibble per file, and the final version of `fit_bill_model()`, which checks its input.
+
+```{r}
+#| message: false
+library(tidyverse)
+penguins <- read_csv("data/penguins.csv")
+
+numbers <- 1:10
+
+files <- list.files("data/penguins", pattern = "\\.csv$", full.names = TRUE)
+penguins_all <- files |>
+    set_names() |>
+    map(read_csv) |>
+    list_rbind(names_to = "file")
+by_file <- split(penguins_all, penguins_all$file)
+
+fit_bill_model <- function(data) {
+    n_complete <- sum(!is.na(data$bill_length_mm) & !is.na(data$bill_depth_mm))
+    if (n_complete < 2) {
+        stop("Need at least 2 penguins with both bill measurements, but found ", n_complete, ".")
+    }
+    model <- lm(bill_depth_mm ~ bill_length_mm, data = data)
+    tibble(
+        slope = coef(model)[["bill_length_mm"]],
+        intercept = coef(model)[["(Intercept)"]]
+    )
+}
+```
+
+### Task 1: More Mapping
+
+This task follows on from Task 1 of the lab.
+
+```{r}
+set.seed(123)
+people <- c("Alice", "Bob", "Charlie")
+greetings <- c("Hello", "Hi", "Howdy")
+tibbles <- list(
+    df1 = tibble(x = 1:3, y = 5:7),
+    df2 = tibble(a = rnorm(5), b = rnorm(5, mean = 1)),
+    df3 = penguins
+)
+file_names <- c("numbers", "random", "penguins")
+```
+
+- [ ] For each number in `numbers`, create a logical vector that is `TRUE` where the number is even and `FALSE` where it is odd.
+- [ ] For each number `<n>` in `numbers`, create a string that says "Value: <n>".
+
+::: {.solution}
+
+:::
+
+- [ ] Rewrite your answers to the last two questions without using `map`. Why is `map` unnecessary here, when it was needed to calculate the mean of each vector in `list_of_vectors` in the lab?
+
+::: {.solution}
+
+:::
+
+- [ ] For each `<name>` in `people` and each `<greeting>` in `greetings`, create a string that says `<greeting> <name>`.
+- [ ] Write each `tibble` in `tibbles` to a file with the corresponding name in `file_names` in the directory `results/`. (*Hint*: use the function `write_csv`, and look up `walk2()`.)
+
+::: {.solution}
+
+:::
+
+### Task 2: `reduce`
+
+This task follows on from Task 1 of the lab.
+
+```{r}
+set.seed(123)
+functions <- list(
+    \(x) x + 1,
+    \(x) x * 2,
+    \(x) sqrt(x)
+)
+
+daily_returns <- rnorm(365, mean = 0.001, sd = 0.01)
+```
+
+- [ ] Compute the sum and product of `numbers`.
+- [ ] Apply the composition of all functions in the list `functions` to a starting number. *Hint:* use the `.init` argument of `reduce`.
+- [ ] The `daily_returns` vector holds one year of daily changes in the value of an investment portfolio, as proportions: a value of `0.01` means the portfolio rose by 1% that day. Assuming all the returns are reinvested and we start with £100, calculate the portfolio value after one year.
+
+::: {.solution}
+
+:::
+
+- [ ] The portfolio value after one year can also be calculated in a single line, without `reduce`. How? Which version would you use, and why?
+
+::: {.solution}
+
+:::
+
+- [ ] **Extension:** Look up the function `accumulate()`. Use it to calculate the value of the portfolio at the end of every day, and plot it. When was the portfolio worth least?
+
+::: {.solution}
+
+:::
+
+### Task 3: One Line or Three?
+
+This task follows on from Task 1 of the lab, where you fitted a separate line of bill depth against bill length for each species.
+
+- [ ] Use `fit_bill_model()` to fit a single line to all the penguins at once, ignoring species. Compare its slope with the slopes for each species. What is going on? Draw a plot to find out. (*Hint*: `geom_smooth(method = "lm")` adds a fitted straight line to a scatter plot.)
+
+::: {.solution}
+
+:::
+
+### Task 4: Pure Functions
+
+This task follows on from Task 1 of the lab, where you used `walk` for functions with side effects.
+Recall from the Week 9 notes that a function is *pure* if its result depends only on its arguments, and calling it has no side effects.
+
+```{r}
+to_kg <- function(mass_g) mass_g / 1000
+
+threshold <- 4000
+is_heavy <- function(mass_g) mass_g > threshold
+
+n_calls <- 0
+count_rows <- function(data) {
+    n_calls <<- n_calls + 1
+    nrow(data)
+}
+
+add_noise <- function(x) x + rnorm(length(x), sd = 0.1)
+
+drop_missing <- function(data) {
+    data <- data |> filter(!is.na(body_mass_g))
+    data
+}
+
+save_summary <- function(data, path) {
+    result <- data |>
+        summarise(n = n(), mean_mass = mean(body_mass_g, na.rm = TRUE))
+    write_csv(result, path)
+    result
+}
+```
+
+- [ ] Which of the functions above are pure? For each impure function, say which condition it breaks. Where you can, check your answers by experimenting.
+- [ ] Rewrite `is_heavy` so that it is pure.
+
+::: {.solution}
+
+:::
+
+- [ ] **Extension:** Rewrite `save_summary` as a pure function that computes the summary, and a separate step that writes it to a file. Why is this split easier to test?
+
+::: {.solution}
+
+:::
+
+### Task 5: Testing `fit_bill_model()`
+
+This task follows on from Task 2 of the lab, where you made `fit_bill_model()` check its input.
+
+- [ ] Write a function `check_bill_model()` that tests `fit_bill_model()`, in the style of `check_distance()` in the Week 9 notes. Include at least one test where you know the right answer, and one test that bad data are rejected with an error. (*Hint*: make up a tiny tibble whose points lie exactly on a line you choose.)
+
+::: {.solution}
+
+:::
+
+- [ ] **Extension:** Document `fit_bill_model()` with a roxygen comment. Then move it into a file `R/models.R`, and load it into your Quarto document with `source()`.
+
+::: {.solution}
+
+:::
+
+### Task 6: A Folder That Isn't There
+
+This task follows on from Task 2 of the lab, and also uses the defensive checks from the end of it.
+
+- [ ] Write a function `read_penguin_folder(path)` that reads every CSV file in the folder `path` into a single tibble, with a column recording which file each row came from. Then try it with a misspelt folder name, such as `"data/pengiuns"`. What happens, and why is it dangerous? Change your function so that it fails fast.
+
+::: {.solution}
+
+:::
+
+### Task 7: Reporting Failures
+
+This task follows on from Task 2 of the lab, where you used `possibly()` to skip the files that could not be fitted.
+
+- [ ] `possibly()` skips failures silently. Instead, use `tryCatch()` to fit `fit_bill_model()` to each file in `by_file`, so that each file that can't be fitted is skipped with a message saying which file it was and what went wrong. Combine the results for the other files into a single tibble.
+
+::: {.solution}
+
+:::
+
+### Task 8: Has Anything Changed?
+
+This task follows on from Task 2 of the lab.
+
+- [ ] Using the per-file results from the lab, compare the slopes for each species across the three years. Has the relationship between bill length and bill depth changed over time for any species? What would you conclude, and how confident are you?
+
+::: {.solution}
+
+:::
