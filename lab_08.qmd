@@ -58,7 +58,29 @@ output$coloured_text <- renderUI({
 - [ ] Use `req()` (see the Week 8 notes) so that the heading is just "Shiny App", and no greeting is displayed, until a name has been entered. Where is the best place to put the `req()` for the greeting?
 
 ::: {.solution}
+Before a name is entered, `input$name` is the empty string `""`, so the heading reads "'s Shiny App" and the greeting reads "Hello , it is great to know you are 21 years old!".
 
+`req(input$name)` treats `""` as empty, and stops the reactive code it is in until a name has been entered:
+
+```r
+output$title <- renderText({
+  req(input$name)
+  paste0(input$name, "'s")
+})
+
+greeting <- reactive({
+  req(input$name)
+  paste0(
+    "Hello ",
+    input$name,
+    ", it is great to know you are ", input$age, " years old!"
+  )
+})
+```
+
+The heading's `textOutput` is then blank, leaving just "Shiny App".
+The best place for the greeting's `req()` is inside the reactive expression `greeting()`, rather than in each output.
+When `req()` stops a reactive expression, every output that reads it is stopped too, so this one `req()` keeps both the plain and the coloured greeting blank.
 :::
 
 #### The Reactive Graph
@@ -69,7 +91,27 @@ Now look at how the parts of your finished app depend on each other.
 - [ ] Which endpoints re-run when the user changes only the colour? Which re-run when they change only the name?
 
 ::: {.solution}
+Your app may differ, but in the model solution (`solutions/app1.R`):
 
+- the **sources** are the three inputs, `input$name`, `input$age` and `input$colour`;
+- the only **conductor** is the reactive expression `greeting()`, which builds the greeting text from `input$name` and `input$age`;
+- the **endpoints** are the three outputs: `output$title` (which reads `input$name`), `output$greeting` (which reads `greeting()`) and `output$coloured_greeting` (which reads `greeting()` and `input$colour`).
+
+```{mermaid}
+flowchart LR
+  name["input$name"] --> title["output$title"]
+  name --> greeting["greeting()"]
+  age["input$age"] --> greeting
+  greeting --> plain["output$greeting"]
+  greeting --> coloured["output$coloured_greeting"]
+  colour["input$colour"] --> coloured
+```
+
+Changing only the colour re-runs only `output$coloured_greeting`, since that is the only thing that reads `input$colour`.
+`greeting()` does not read the colour, so it is not out of date: `output$coloured_greeting` gets its *cached* value rather than rebuilding the text.
+
+Changing only the name re-runs all three endpoints: `output$title` reads `input$name` directly, and both greetings read `greeting()`, which reads `input$name`.
+`greeting()` itself is recomputed only once: the first greeting to re-run recomputes it, and the second receives the cached result.
 :::
 
 ### Task 2: A Data Visualiser
@@ -94,7 +136,23 @@ Once your app can filter the data:
 - [ ] Change your app so that the axes stay the same whatever is filtered. (Hint: see how the data explorer in the Week 8 notes fixes its axes. Here, the limits need to depend on the variables chosen.)
 
 ::: {.solution}
+By default, `ggplot2` sets the axes to fit the points being plotted, so each species' plot is rescaled to fill the panel.
+The Adelie plot's body mass axis runs from about 2,750 g to 4,870 g, and the Gentoo plot's from about 3,830 g to 6,420 g, so the two clouds of points look much the same.
+A reader who doesn't check the axis labels could conclude that the species are a similar size, when Gentoo penguins are around 1.4 kg heavier on average, and have longer flippers.
 
+As in the notes, `coord_cartesian` fixes the axes.
+The limits can't be typed in, since they depend on which variables the user has chosen, but they can be computed from the whole dataset with `range()`:
+
+```r
+coord_cartesian(
+  xlim = range(penguins[[input$x_var]], na.rm = TRUE),
+  ylim = range(penguins[[input$y_var]], na.rm = TRUE)
+)
+```
+
+`penguins[[input$x_var]]` extracts the column whose name is stored in `input$x_var`, as a vector.
+`na.rm = TRUE` is needed because each measurement is missing for two penguins.
+Now every plot of the same variables has the same axes, whichever species is chosen, so plots for different species can be compared directly.
 :::
 
 ## Finished? {.unnumbered}

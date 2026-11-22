@@ -25,7 +25,22 @@ The file `src/samples.R` contains the app from the Reactive Expressions section 
 - [ ] Suppose you tried to fix the problem by calling `set.seed(1)` at the start of each `render*` function. Would the outputs agree? Why is a reactive expression still the better solution?
 
 ::: {.solution}
+The app without the reactive expression is in `solutions/samples_no_reactive.R`.
+Each output now draws its own sample of 10 points, so the plot, the printed means and the table describe three *different* samples: the points in the table are not the points in the plot, and the printed means are not the means of either.
 
+In the original app, the reactive graph has the two inputs as sources, `samples()` as a conductor, and the three outputs as endpoints that all read `samples()`.
+When $\mu_1$ changes, `samples()` is recomputed once, and all three outputs read that same, cached sample.
+Without the conductor, each input is connected directly to each of the three endpoints, and each endpoint calls `rnorm` for itself.
+Nothing in the graph says that the three outputs should share their data, so they don't.
+
+Calling `set.seed(1)` at the start of each `render*` function does make the outputs agree: each one resets the random number generator to the same state, then draws the same numbers in the same order, so all three generate the same sample.
+(As the notes point out, changing $\mu_1$ then slides the same cloud of points left or right, rather than drawing a new one.)
+But this is a fragile fix:
+
+- The sampling code is copied three times, and the copies must stay *exactly* the same. Change the sample size, or swap the order of the two `rnorm` calls, in one copy but not the others, and the outputs silently disagree again.
+- The sample is computed three times instead of once.
+
+A reactive expression guarantees that every output uses the same sample, and the code that draws it is written only once.
 :::
 
 ### Task 2: A Resample Button
@@ -39,7 +54,36 @@ At the moment, the app draws a new sample every time $\mu_1$ or $\mu_2$ changes,
 - [ ] Your `reactiveVal` probably holds the standard normal sample (`z`), not the sample that is plotted. Why would it be a bad idea to store the plotted sample in the `reactiveVal` instead?
 
 ::: {.solution}
+A solution is in `solutions/resample.R`.
+Its server stores a standard normal sample in a `reactiveVal`, replaces it in an `observeEvent` each time the button is pressed, and adds $\mu_1$ and $\mu_2$ to it in the reactive expression `samples()`:
 
+```r
+noise <- reactiveVal(tibble(z1 = rnorm(10), z2 = rnorm(10)))
+
+observeEvent(input$resample, {
+  noise(tibble(z1 = rnorm(10), z2 = rnorm(10)))
+})
+
+samples <- reactive(tibble(
+  x1 = input$mu1 + noise()$z1,
+  x2 = input$mu2 + noise()$z2
+))
+```
+
+The rest of the server is unchanged: the three outputs still read `samples()`.
+This follows the rule of thumb in the notes.
+Pressing the button should make something *happen*, drawing new random numbers, so it is handled by an observer.
+The noise is a value that only the server changes, so it is stored in a `reactiveVal`.
+The plotted sample is a *value* computed from other reactive values, so it is a reactive expression.
+
+In the reactive graph, the sources are `input$mu1`, `input$mu2`, `input$resample` and `noise`; the conductor is `samples()`, which reads `input$mu1`, `input$mu2` and `noise()`; and the endpoints are the observer, which reads only `input$resample`, and the three outputs, which read `samples()`.
+
+- Changing $\mu_1$ invalidates `samples()`, so it is recomputed (once) and all three outputs re-run. `noise` has not changed, so every point moves by the same amount in the $x$ direction.
+- Pressing the button runs the observer, which sets `noise` to a new sample. That invalidates `samples()`, and so the three outputs re-run with new points. The observer is the only thing that reads `input$resample`.
+
+To store the plotted sample in the `reactiveVal` instead, observers would have to update it when $\mu_1$ or $\mu_2$ changes, as well as when the button is pressed.
+Redrawing the sample each time brings back the jumping points we were trying to remove, while shifting the existing points means remembering the old values of $\mu_1$ and $\mu_2$ to work out how far to move them.
+Either way, it is what the notes warn against: using an observer to compute a value and store it in a `reactiveVal`, when a reactive expression does the job more simply.
 :::
 
 ### Task 3: Choosing the Filter Variable
@@ -57,7 +101,29 @@ penguins |> filter(.data[[col]] == "Adelie")
 ```
 
 ::: {.solution}
+A solution is in `solutions/datavis_extension.R`.
+In place of the species dropdown, the `ui` has a `selectInput` called `filter_var` for the variable, and a `uiOutput` for the dropdown of values, which the server builds from the chosen column:
 
+```r
+output$filter_value_ui <- renderUI({
+  values <- sort(unique(na.omit(penguins[[input$filter_var]])))
+  selectInput("filter_value", "Show only:", choices = c("(All)" = "", values))
+})
+
+selected <- reactive({
+  if (isTRUE(input$filter_value %in% penguins[[input$filter_var]])) {
+    penguins |>
+      filter(.data[[input$filter_var]] == input$filter_value)
+  } else {
+    penguins
+  }
+})
+```
+
+The test in `selected()` is the subtle part.
+`input$filter_value` is `NULL` until the dropdown first appears, and just after the user chooses a new filter variable it still holds a value of the *old* one (say `"Dream"` while filtering by sex), until the new dropdown has been sent to the browser.
+Filtering on `"Dream"` in the `sex` column would briefly leave no rows at all, so the plot would flash up empty.
+Only filtering on a value that belongs to the current variable avoids this: in every other case (including `"(All)"`, whose value is `""`), the whole dataset is shown.
 :::
 
 ### Task 4: Exploring with Your Visualiser
@@ -68,7 +134,31 @@ This task follows on from Task 2 of the lab, and uses your visualiser.
 - [ ] Colour the points by sex. What are the grey points, and how many are there? Should your app show them? Change it to handle them in the way you think is best.
 
 ::: {.solution}
+Any plot with bill length on one axis separates the species into three clusters that hardly overlap; bill length against bill depth is the clearest.
+Bill length separates Adelie penguins (a mean of 38.8 mm) from the other two species (47.5 mm and 48.8 mm), and bill depth separates Gentoo penguins (15.0 mm) from Chinstraps (18.4 mm).
+Without bill length, Adelie and Chinstrap penguins overlap almost completely: their mean bill depths (18.3 and 18.4 mm), flipper lengths (190 and 196 mm) and body masses (3,701 and 3,733 g) are all very close.
 
+We should be fairly, but not completely, confident:
+
+- A few penguins sit between the clusters, so "best" is a judgement made by eye.
+- Species and island are confounded: Chinstraps were only measured on Dream, and Gentoos only on Biscoe, so some of the difference between species *could* be a difference between islands. Adelie penguins were measured on all three islands, and filtering to them shows that their measurements barely differ between islands, which suggests that island is not the explanation.
+- Males are larger than females (for example, male Gentoos are about 800 g heavier than females), which spreads out each species' cluster, and the groups are of different sizes (only 68 Chinstraps).
+- If the axes are not fixed, as in Task 2 of the lab, plots of single species can mislead.
+
+The grey points are penguins whose sex is missing (`NA`), which `ggplot2` draws in grey and labels `NA` in the legend.
+The sex of 11 penguins is missing, but only 9 grey points appear (5 Adelie and 4 Gentoo): the other 2 penguins have no measurements at all, so are never plotted.
+
+There is no single right answer to whether to show them.
+They are genuine measurements, so removing those penguins from *every* plot would throw away data; but `NA` is not a sex, and a legend entry for it may confuse a user.
+One reasonable choice is to leave out the penguins whose value of the *colour* variable is missing, which only affects the plot when colouring by sex, by filtering inside `renderPlot` before plotting:
+
+```r
+plot_data <- selected() |>
+  filter(!is.na(.data[[input$colour_var]]))
+```
+
+and then plotting `plot_data` rather than `selected()`.
+Whatever you choose, it is good practice to tell the user, for example in a caption added with `labs(caption = ...)`, that some penguins are not shown.
 :::
 
 ### Task 5: The Visualiser's Reactive Graph
@@ -79,7 +169,26 @@ This task combines ideas from both tasks of the lab.
 - [ ] What re-runs when the user types a title? What re-runs when they choose a species? Is the data filtered again when the title changes?
 
 ::: {.solution}
+In the model solution (`solutions/datavis.R`), the sources are the seven inputs; the only conductor is `selected()`, which reads `input$species`; and the only endpoint is `output$plot`, which reads `selected()` and the other six inputs.
 
+```{mermaid}
+flowchart LR
+  species["input$species"] --> selected["selected()"]
+  selected --> plot["output$plot"]
+  x_var["input$x_var"] --> plot
+  y_var["input$y_var"] --> plot
+  colour_var["input$colour_var"] --> plot
+  x_label["input$x_label"] --> plot
+  y_label["input$y_label"] --> plot
+  title["input$title"] --> plot
+```
+
+Typing a title re-runs only `output$plot`.
+`selected()` does not read the title, so it is not out of date, and the plot uses its cached result: the data is *not* filtered again.
+Choosing a species invalidates `selected()`, so it is recomputed, and then the plot is redrawn.
+
+If we had filtered the data inside `renderPlot` instead, it would be filtered again every time a label changed.
+With 344 penguins that makes no visible difference, but with a large dataset or a slow calculation it would make the app sluggish.
 :::
 
 ### Task 6: Deploying an App
